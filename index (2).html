@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Juego de Memoria</title>
+<style>
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:#fbf6e9;color:#1d2b3a;font-family:Georgia,"Times New Roman",serif;font-size:22px;text-align:center;padding:14px}
+main{max-width:780px;margin:0 auto}
+h1{font-size:2.2rem;margin:.2em 0}
+h2{font-size:1.5rem;margin:.8em 0 .2em}
+button{font:inherit;font-size:1.4rem;font-weight:bold;padding:.55em 1.1em;margin:5px;border-radius:14px;border:3px solid #1d2b3a;background:#fff;color:#1d2b3a;cursor:pointer}
+button[aria-pressed="true"]{background:#1f5f8b;color:#fff}
+button.go{background:#2e7d32;color:#fff;font-size:1.7rem;margin-top:22px}
+button:focus-visible{outline:5px solid #e0a100;outline-offset:2px}
+#msg{min-height:2.8em;font-size:1.5rem;font-weight:bold;margin:8px 0}
+#info{font-size:1.2rem}
+#board{display:grid;gap:10px;margin:14px 0}
+.card{aspect-ratio:1/1.05;margin:0;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:14px;background:#1f5f8b;color:#fff;font-size:clamp(2rem,9vw,3.6rem)}
+.card .n{display:none}
+.card.up,.card.ok{background:#fff;color:#1d2b3a}
+.card.up .q,.card.ok .q{display:none}
+.card .e{display:none;font-size:clamp(2.2rem,9vw,3.8rem);line-height:1.1}
+.card.up .e,.card.ok .e{display:block}
+.card.up .n,.card.ok .n{display:block;font-size:clamp(.65rem,2.6vw,1.05rem);line-height:1.1;word-break:break-word}
+.card.ok{background:#dff3e0;border-color:#2e7d32;border-width:5px}
+</style>
+</head>
+<body>
+<main>
+<h1>Juego de Memoria</h1>
+
+<section id="menu">
+  <p>Encuentra las parejas de cartas iguales.<br>No hay prisa ni tiempo límite.</p>
+  <h2>¿Qué cartas quieres?</h2>
+  <div id="temas"></div>
+  <h2>¿Qué dificultad?</h2>
+  <div id="niveles"></div>
+  <button class="go" id="bGo">¡Empezar!</button>
+</section>
+
+<section id="juego" hidden>
+  <div id="info"></div>
+  <div id="msg" role="status"></div>
+  <div id="board"></div>
+  <button id="bVoz">Voz: sí</button>
+  <button id="bMenu">Volver al menú</button>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const TEMAS = {
+  "Frutas": [["🍎","la manzana"],["🍌","el plátano"],["🍇","las uvas"],["🍊","la naranja"],["🍓","la fresa"],["🍒","las cerezas"],["🍐","la pera"],["🍉","la sandía"],["🍋","el limón"],["🍑","el melocotón"]],
+  "Animales": [["🐶","el perro"],["🐱","el gato"],["🐴","el caballo"],["🐮","la vaca"],["🐷","el cerdo"],["🐔","la gallina"],["🐑","la oveja"],["🐰","el conejo"],["🐦","el pájaro"],["🐟","el pez"]],
+  "Cosas de cada día": [["☂️","el paraguas"],["🔑","la llave"],["⏰","el despertador"],["👓","las gafas"],["☎️","el teléfono"],["🎩","el sombrero"],["☕","el café"],["🌹","la rosa"],["🚗","el coche"],["📖","el libro"]]
+};
+const NIVELES = {"Fácil":[6,4], "Medio":[8,4], "Difícil":[10,5]};
+let tema="Frutas", nivel="Fácil", voz=true;
+let first=null, lock=false, found=0, tries=0, pares=0;
+
+function botones(id, opciones, actual, fn){
+  const cont=$(id); cont.innerHTML="";
+  opciones.forEach(o => {
+    const b=document.createElement("button");
+    b.textContent=o; b.setAttribute("aria-pressed", o===actual);
+    b.onclick=() => { fn(o); botones(id,opciones,o,fn); };
+    cont.appendChild(b);
+  });
+}
+botones("temas", Object.keys(TEMAS), tema, o => tema=o);
+botones("niveles", Object.keys(NIVELES), nivel, o => nivel=o);
+
+function decir(t){
+  if(!voz || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(t); u.lang="es-ES"; u.rate=.85;
+  speechSynthesis.speak(u);
+}
+function marcador(){ $("info").textContent = "Parejas: " + found + " de " + pares + "  ·  Intentos: " + tries; }
+
+function empezar(){
+  const [n,cols] = NIVELES[nivel];
+  pares=n; found=0; tries=0; first=null; lock=false;
+  const mazo = TEMAS[tema].slice().sort(() => Math.random()-.5).slice(0,n);
+  const cartas = mazo.concat(mazo).sort(() => Math.random()-.5);
+  const B=$("board"); B.innerHTML="";
+  B.style.gridTemplateColumns="repeat("+cols+",1fr)";
+  cartas.forEach(([e,nom]) => {
+    const b=document.createElement("button");
+    b.className="card"; b.dataset.k=e; b.dataset.n=nom;
+    b.setAttribute("aria-label","Carta cerrada");
+    b.innerHTML='<span class="q">?</span><span class="e">'+e+'</span><span class="n">'+nom+'</span>';
+    b.onclick=() => voltear(b);
+    B.appendChild(b);
+  });
+  $("menu").hidden=true; $("juego").hidden=false;
+  $("msg").textContent="Toca una carta para darle la vuelta.";
+  marcador();
+}
+
+function voltear(b){
+  if(lock || b.classList.contains("up") || b.classList.contains("ok")) return;
+  b.classList.add("up"); b.setAttribute("aria-label", b.dataset.n);
+  if(!first){ first=b; $("msg").textContent="Es "+b.dataset.n+". Ahora busca su pareja."; return; }
+  tries++;
+  const a=first; first=null;
+  if(a.dataset.k===b.dataset.k){
+    [a,b].forEach(x => { x.classList.remove("up"); x.classList.add("ok"); });
+    found++; marcador();
+    if(found===pares){
+      const t="¡Enhorabuena! Has encontrado todas las parejas en "+tries+" intentos.";
+      $("msg").textContent="🎉 "+t; decir(t);
+      const otra=document.createElement("button"); otra.textContent="Jugar otra vez"; otra.className="go"; otra.id="bOtra";
+      otra.onclick=empezar; $("msg").appendChild(document.createElement("br")); $("msg").appendChild(otra);
+    } else { const t="¡Muy bien! Pareja de "+b.dataset.n+"."; $("msg").textContent="👏 "+t; decir(t); }
+  } else {
+    lock=true; marcador();
+    $("msg").textContent="No son iguales. Fíjate bien en dónde están.";
+    setTimeout(() => {
+      [a,b].forEach(x => { x.classList.remove("up"); x.setAttribute("aria-label","Carta cerrada"); });
+      lock=false; $("msg").textContent="Prueba con otra carta.";
+    }, 2200);
+  }
+}
+
+$("bGo").onclick=empezar;
+$("bMenu").onclick=() => { lock=true; $("juego").hidden=true; $("menu").hidden=false; if(window.speechSynthesis) speechSynthesis.cancel(); };
+$("bVoz").onclick=() => { voz=!voz; $("bVoz").textContent="Voz: "+(voz?"sí":"no"); if(!voz && window.speechSynthesis) speechSynthesis.cancel(); };
+</script>
+</body>
+</html>
